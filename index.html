@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaktywna Symulacja Zderzenia - Poprawiona</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            margin: 0; 
+            padding: 10px 0;
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh;
+            background-color: #f0f0f0; 
+            box-sizing: border-box;
+        }
+        #simulationContainer {
+            position: relative;
+            width: 95%;
+            max-width: 800px;
+        }
+        canvas { 
+            display: block;
+            width: 100%;
+            height: auto;
+            border: 2px solid black; 
+            background-color: #ffffff; 
+        }
+        #controls {
+            width: 95%;
+            max-width: 800px;
+            padding: 20px; 
+            background-color: #e0e0e0; 
+            border: 2px solid black;
+            border-top: none;
+            box-sizing: border-box;
+        }
+        .control-group { margin-bottom: 15px; display: flex; align-items: center; flex-wrap: wrap; }
+        label { display: inline-block; width: 150px; font-weight: bold; }
+        input[type="range"] { flex-grow: 1; min-width: 200px; }
+        button { padding: 12px 18px; font-size: 16px; cursor: pointer; margin-right: 10px; border-radius: 5px; border: 1px solid #333; }
+        button:disabled { cursor: not-allowed; opacity: 0.5; }
+        #slowMoLabel { width: auto; margin-left: 5px; font-weight: normal; }
+        
+        #class-N-icon {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 3px solid #007bff;
+            background-color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        #class-N-icon span {
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            font-size: 30px;
+            color: #2c2c2c;
+        }
+
+        @media (max-width: 850px) {
+            .control-group {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            label {
+                width: 100%;
+                margin-bottom: 8px;
+            }
+            input[type="range"] {
+                width: 100%;
+            }
+            .control-group button {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            body {
+                font-size: 1.1em;
+            }
+            #class-N-icon {
+                width: 40px;
+                height: 40px;
+                bottom: 5px;
+                left: 5px;
+            }
+            #class-N-icon span {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="simulationContainer">
+        <canvas id="simulationCanvas"></canvas>
+        <div id="class-N-icon">
+            <span>N</span>
+        </div>
+    </div>
+    <div id="controls">
+        <div class="control-group">
+            <label for="wallSpeed">Prędkość ściany:</label>
+            <input type="range" id="wallSpeed" min="0" max="150" value="50">
+            <span id="wallSpeedValue">50</span> px/s (w prawo →)
+        </div>
+        <div class="control-group">
+            <label for="ballSpeed">Prędkość piłki:</label>
+            <input type="range" id="ballSpeed" min="50" max="250" value="150">
+            <span id="ballSpeedValue">150</span> px/s (w lewo ←)
+        </div>
+        <div class="control-group">
+            <button id="startButton">START</button>
+            <button id="resetButton">RESETUJ</button>
+            <button id="switchFrameButton">Zmień na: Układ Ściany</button>
+        </div>
+        <div class="control-group">
+            <input type="checkbox" id="slowMoCheckbox">
+            <label for="slowMoCheckbox" id="slowMoLabel">Zwolnione tempo (0.5x)</label>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 800;
+        canvas.height = 400;
+
+        const startButton = document.getElementById('startButton');
+        const wallSpeedSlider = document.getElementById('wallSpeed');
+        const ballSpeedSlider = document.getElementById('ballSpeed');
+        const wallSpeedValue = document.getElementById('wallSpeedValue');
+        const ballSpeedValue = document.getElementById('ballSpeedValue');
+        const resetButton = document.getElementById('resetButton');
+        const switchFrameButton = document.getElementById('switchFrameButton');
+        const slowMoCheckbox = document.getElementById('slowMoCheckbox');
+
+        const sciana = { szerokosc: 20, wysokosc: 100, x: 0, y: 0, predkosc: 0 };
+        const pilka = { promien: 15, x: 0, y: 0, predkosc: 0 };
+        
+        let poczatkowaPredkoscPilki = 0;
+        let poczatkowaPredkoscSciany = 0;
+
+        let ostatniCzas = 0;
+        let czyDoszloDoZderzenia = false;
+        let ukladOdniesienia = 'LABORATORIUM';
+        let stanSymulacji = 'IDLE';
+
+        const WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE = 100;
+
+        wallSpeedSlider.addEventListener('input', (e) => { wallSpeedValue.textContent = e.target.value; });
+        ballSpeedSlider.addEventListener('input', (e) => { ballSpeedValue.textContent = e.target.value; });
+        
+        startButton.addEventListener('click', startSymulacji);
+        resetButton.addEventListener('click', resetSymulacji);
+        switchFrameButton.addEventListener('click', zmienUklad);
+
+        function startSymulacji() {
+            if (stanSymulacji === 'IDLE') {
+                // POPRAWKA: Wczytujemy wartości z suwaków DOPIERO w momencie startu!
+                poczatkowaPredkoscSciany = parseFloat(wallSpeedSlider.value);
+                poczatkowaPredkoscPilki = -parseFloat(ballSpeedSlider.value);
+                
+                // Ustawiamy bieżące prędkości na podstawie wczytanych wartości
+                sciana.predkosc = poczatkowaPredkoscSciany;
+                pilka.predkosc = poczatkowaPredkoscPilki;
+                
+                stanSymulacji = 'RUNNING';
+                ostatniCzas = performance.now();
+                startButton.disabled = true;
+                resetButton.disabled = false;
+                switchFrameButton.disabled = true;
+            }
+        }
+
+        function resetSymulacji() {
+            stanSymulacji = 'IDLE';
+            
+            // POPRAWKA: Ta funkcja już nie wczytuje prędkości, tylko resetuje pozycje.
+            // Prędkości zostaną wczytane po kliknięciu START.
+            sciana.x = 100;
+            sciana.y = (canvas.height - sciana.wysokosc) / 2;
+            pilka.x = 700;
+            pilka.y = canvas.height / 2;
+            
+            // Resetujemy też bieżące prędkości, aby tekst na ekranie się zgadzał
+            sciana.predkosc = parseFloat(wallSpeedSlider.value);
+            pilka.predkosc = -parseFloat(ballSpeedSlider.value);
+
+            czyDoszloDoZderzenia = false;
+            
+            startButton.disabled = false;
+            resetButton.disabled = true;
+            switchFrameButton.disabled = false;
+            rysujScene();
+        }
+
+        function zmienUklad() {
+            ukladOdniesienia = (ukladOdniesienia === 'LABORATORIUM') ? 'SCIANA' : 'LABORATORIUM';
+            switchFrameButton.textContent = (ukladOdniesienia === 'LABORATORIUM') ? 'Zmień na: Układ Ściany' : 'Zmień na: Układ Laboratorium';
+            resetSymulacji();
+        }
+
+        function rysujScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let tekstDoWyswietlenia = '';
+            
+            if (ukladOdniesienia === 'LABORATORIUM') {
+                ctx.fillStyle = '#dc3232';
+                ctx.fillRect(sciana.x, sciana.y, sciana.szerokosc, sciana.wysokosc);
+                ctx.fillStyle = '#3232dc';
+                ctx.beginPath();
+                ctx.arc(pilka.x, pilka.y, pilka.promien, 0, Math.PI * 2);
+                ctx.fill();
+                tekstDoWyswietlenia = `Prędkość piłki: ${Math.round(pilka.predkosc)} px/s`;
+            } else { 
+                ctx.fillStyle = '#dc3232';
+                ctx.fillRect(WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE, sciana.y, sciana.szerokosc, sciana.wysokosc);
+                const wizualnaPozycjaPilkiX = WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE + (pilka.x - sciana.x);
+                ctx.fillStyle = '#3232dc';
+                ctx.beginPath();
+                ctx.arc(wizualnaPozycjaPilkiX, pilka.y, pilka.promien, 0, Math.PI * 2);
+                ctx.fill();
+                const predkoscWzgledna = pilka.predkosc - sciana.predkosc;
+                tekstDoWyswietlenia = `Prędkość piłki WZGLĘDEM ściany: ${Math.round(predkoscWzgledna)} px/s`;
+            }
+
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText(`UKŁAD: ${ukladOdniesienia}`, 10, 30);
+            ctx.fillText(tekstDoWyswietlenia, 10, 60);
+        }
+        
+        function petlaAnimacji(aktualnyCzas) {
+            if (stanSymulacji === 'RUNNING') {
+                let dt = (aktualnyCzas - ostatniCzas) / 1000 || 0;
+                ostatniCzas = aktualnyCzas;
+
+                if (dt > 0.1) {
+                    dt = 1 / 60; 
+                }
+                
+                let wspolczynnikCzasu = slowMoCheckbox.checked ? 0.5 : 1.0;
+                const efektywny_dt = dt * wspolczynnikCzasu;
+                
+                sciana.x += sciana.predkosc * efektywny_dt;
+                pilka.x += pilka.predkosc * efektywny_dt;
+
+                if (pilka.x - pilka.promien <= sciana.x + sciana.szerokosc && !czyDoszloDoZderzenia) {
+                    czyDoszloDoZderzenia = true;
+                    const wnikniecie = (sciana.x + sciana.szerokosc) - (pilka.x - pilka.promien);
+                    pilka.x += wnikniecie;
+
+                    let shouldBounce = false;
+
+                    if (window.innerWidth > 850) {
+                        if (confirm("Piłka zaraz się odbije, kontynuować?")) {
+                            shouldBounce = true;
+                        }
+                    } else {
+                        shouldBounce = true;
+                    }
+
+                    if (shouldBounce) {
+                        if (ukladOdniesienia === 'LABORATORIUM') {
+                            pilka.predkosc = -poczatkowaPredkoscPilki + 2 * poczatkowaPredkoscSciany;
+                        } else {
+                            const predkoscWzglednaPrzed = poczatkowaPredkoscPilki - poczatkowaPredkoscSciany;
+                            const predkoscWzglednaPo = -predkoscWzglednaPrzed;
+                            pilka.predkosc = predkoscWzglednaPo + poczatkowaPredkoscSciany;
+                        }
+                    }
+                }
+            }
+            
+            rysujScene();
+            requestAnimationFrame(petlaAnimacji);
+        }
+
+        resetSymulacji();
+        requestAnimationFrame(petlaAnimacji);
+    </script>
+</body>
+</html>
