@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interaktywna Symulacja Zderzenia - Poprawiona</title>
+    <title>Odbicie piłeczki od ruchomej ściany — dwie karty (V6)</title>
     <style>
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
@@ -95,25 +95,88 @@
                 font-size: 24px;
             }
         }
+
+        .card-tabs { width: 95%; max-width: 800px; display: flex; gap: 5px; box-sizing: border-box; }
+        .card-tab { flex: 1; min-width: 0; border: 2px solid #333; border-bottom: none;
+            border-radius: 6px 6px 0 0; padding: 11px 8px; background: #dedede;
+            font-size: 16px; font-weight: bold; margin: 0; }
+        .card-tab.active { background: #fff; border-color: #222; text-decoration: underline; }
+        .status-text { min-height: 26px; margin-top: 8px; line-height: 1.4; font-size: 14px; color: #222; }
+        .small-note { font-size: 13px; line-height: 1.35; margin: 0 0 12px; color: #444; }
+        .slider-value { min-width: 30px; display: inline-block; text-align: right; margin-right: 2px; }
+        .speed-readout { display: inline-flex; gap: 3px; align-items: baseline; white-space: nowrap; }
+        #pauseBeforeCollision { margin: 0 7px 0 0; width: 20px; height: 20px; }
+        #pauseBeforeCollisionLabel { width: auto; font-weight: normal; margin: 0; }
+        .dialog-overlay { position: absolute; z-index: 20; inset: 0; background: rgba(20,20,20,.43);
+            display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; }
+        .dialog-overlay[hidden] { display: none; }
+        .dialog-card { background: white; border: 2px solid #333; border-radius: 8px; padding: 20px;
+            max-width: 520px; width: 100%; box-sizing: border-box; box-shadow: 0 3px 18px rgba(0,0,0,.22); }
+        .dialog-card h2 { margin: 0 0 8px; font-size: 21px; }
+        .dialog-card p { margin: 6px 0 14px; }
+        .dialog-option { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+        .dialog-option label { width: auto; font-weight: normal; }
+        .dialog-card button { background: #e7e7e7; }
+        @media (max-width: 850px) {
+            .card-tabs { flex-direction: column; }
+            .card-tab { border: 2px solid #333; border-radius: 5px; }
+            .control-group.option-row { flex-direction: row; align-items: center; }
+            .control-group.option-row label { width: auto; margin: 0; }
+            .dialog-card { padding: 12px; }
+            .dialog-card h2 { font-size: 17px; }
+        }
+
+        /* Prosty odczyt dla aktualnie wybranego układu odniesienia. */
+        .velocity-panel {
+            width: 95%; max-width: 800px; box-sizing: border-box;
+            background: #fff; border: 2px solid #000; border-top: none;
+            padding: 11px 16px; display: flex; align-items: center;
+            gap: 32px; flex-wrap: wrap; font-size: 17px;
+        }
+        .velocity-panel .velocity-reading { display: inline-flex; align-items: baseline; gap: 8px; }
+        .velocity-panel .reading-label { font-weight: bold; }
+        .velocity-panel .velocity-value { font-variant-numeric: tabular-nums; }
+        @media (max-width: 850px) {
+            .velocity-panel { padding: 9px 12px; gap: 14px; font-size: 15px; }
+        }
     </style>
 </head>
 <body>
+    <div class="card-tabs" role="tablist" aria-label="Rodzaj zderzenia">
+        <button type="button" class="card-tab active" id="approachTab" role="tab" aria-selected="true" aria-controls="simulationContainer">Karta I — ściana zbliża się</button>
+        <button type="button" class="card-tab" id="recedeTab" role="tab" aria-selected="false" aria-controls="simulationContainer">Karta II — ściana oddala się</button>
+    </div>
     <div id="simulationContainer">
         <canvas id="simulationCanvas"></canvas>
         <div id="class-N-icon">
             <span>N</span>
         </div>
+        <div class="dialog-overlay" id="collisionOverlay" role="dialog" aria-modal="true" aria-labelledby="collisionHeading" hidden>
+            <div class="dialog-card">
+                <h2 id="collisionHeading">Piłka zaraz odbije się od ściany</h2>
+                <p id="collisionPrompt">Spróbuj przewidzieć, co stanie się z szybkością piłki po zderzeniu.</p>
+                <div class="dialog-option">
+                    <input type="checkbox" id="dontShowAgain">
+                    <label for="dontShowAgain">Nie pokazuj tej pauzy przy następnych zderzeniach</label>
+                </div>
+                <button type="button" id="continueButton">Kontynuuj — pokaż odbicie</button>
+            </div>
+        </div>
+    </div>
+    <div class="velocity-panel" aria-label="Prędkość piłki przed zderzeniem i po nim w wybranym układzie odniesienia">
+      <div class="velocity-reading"><span class="reading-label">Przed:</span><span class="velocity-value" id="velocityBefore">—</span></div>
+      <div class="velocity-reading"><span class="reading-label">Po:</span><span class="velocity-value" id="velocityAfter">—</span></div>
     </div>
     <div id="controls">
         <div class="control-group">
-            <label for="wallSpeed">Prędkość ściany:</label>
+            <label for="wallSpeed">Szybkość ściany:</label>
             <input type="range" id="wallSpeed" min="0" max="150" value="50">
-            <span id="wallSpeedValue">50</span> px/s (w prawo →)
+            <span class="speed-readout"><span class="slider-value" id="wallSpeedValue">50</span> px/s <span id="wallDirection">(w prawo)</span></span>
         </div>
         <div class="control-group">
-            <label for="ballSpeed">Prędkość piłki:</label>
-            <input type="range" id="ballSpeed" min="50" max="250" value="150">
-            <span id="ballSpeedValue">150</span> px/s (w lewo ←)
+            <label for="ballSpeed">Szybkość piłki:</label>
+            <input type="range" id="ballSpeed" min="0" max="250" value="150" step="1">
+            <span class="speed-readout"><span class="slider-value" id="ballSpeedValue">150</span> px/s (w lewo)</span>
         </div>
         <div class="control-group">
             <button id="startButton">START</button>
@@ -124,166 +187,289 @@
             <input type="checkbox" id="slowMoCheckbox">
             <label for="slowMoCheckbox" id="slowMoLabel">Zwolnione tempo (0.5x)</label>
         </div>
+        <div class="control-group option-row">
+            <input type="checkbox" id="pauseBeforeCollision" checked>
+            <label for="pauseBeforeCollision" id="pauseBeforeCollisionLabel">Zatrzymaj przed zderzeniem (można wyłączyć po pierwszym pokazie)</label>
+        </div>
+        <div class="status-text" id="simulationStatus" role="status" aria-live="polite"></div>
     </div>
 
     <script>
+        // Dwie karty tego samego idealizowanego doświadczenia: ściana o bardzo dużej masie.
+        // Oś x rośnie w prawo, prędkości są ze znakiem. Czas zderzenia wyznaczamy dokładnie
+        // z położenia krawędzi, aby uniknąć przenikania obiektów podczas dużego kroku animacji.
         const canvas = document.getElementById('simulationCanvas');
         const ctx = canvas.getContext('2d');
         canvas.width = 800;
         canvas.height = 400;
 
-        const startButton = document.getElementById('startButton');
-        const wallSpeedSlider = document.getElementById('wallSpeed');
-        const ballSpeedSlider = document.getElementById('ballSpeed');
-        const wallSpeedValue = document.getElementById('wallSpeedValue');
-        const ballSpeedValue = document.getElementById('ballSpeedValue');
-        const resetButton = document.getElementById('resetButton');
-        const switchFrameButton = document.getElementById('switchFrameButton');
-        const slowMoCheckbox = document.getElementById('slowMoCheckbox');
+        const ui = {
+            approachTab: document.getElementById('approachTab'),
+            recedeTab: document.getElementById('recedeTab'),
+            wallSpeed: document.getElementById('wallSpeed'),
+            ballSpeed: document.getElementById('ballSpeed'),
+            wallSpeedValue: document.getElementById('wallSpeedValue'),
+            ballSpeedValue: document.getElementById('ballSpeedValue'),
+            wallDirection: document.getElementById('wallDirection'),
+            velocityBefore: document.getElementById('velocityBefore'),
+            velocityAfter: document.getElementById('velocityAfter'),
+            startButton: document.getElementById('startButton'),
+            resetButton: document.getElementById('resetButton'),
+            switchFrameButton: document.getElementById('switchFrameButton'),
+            slowMoCheckbox: document.getElementById('slowMoCheckbox'),
+            pauseBeforeCollision: document.getElementById('pauseBeforeCollision'),
+            simulationStatus: document.getElementById('simulationStatus'),
+            collisionOverlay: document.getElementById('collisionOverlay'),
+            collisionPrompt: document.getElementById('collisionPrompt'),
+            dontShowAgain: document.getElementById('dontShowAgain'),
+            continueButton: document.getElementById('continueButton')
+        };
 
-        const sciana = { szerokosc: 20, wysokosc: 100, x: 0, y: 0, predkosc: 0 };
-        const pilka = { promien: 15, x: 0, y: 0, predkosc: 0 };
-        
-        let poczatkowaPredkoscPilki = 0;
-        let poczatkowaPredkoscSciany = 0;
-
-        let ostatniCzas = 0;
-        let czyDoszloDoZderzenia = false;
-        let ukladOdniesienia = 'LABORATORIUM';
-        let stanSymulacji = 'IDLE';
-
+        const sciana = { szerokosc: 20, wysokosc: 100, x: 100, y: 150, predkosc: 0 };
+        const pilka = { promien: 15, x: 700, y: 200, predkosc: 0 };
         const WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE = 100;
+        const PARAMETRY = {
+            approaching: { wallX: 100, ballX: 700, wallMin: 0, wallMax: 150, wallDefault: 50,
+                ballMin: 50, ballMax: 250, ballDefault: 150, wallSign: 1 },
+            receding: { wallX: 480, ballX: 680, wallMin: 0, wallMax: 120, wallDefault: 100,
+                ballMin: 50, ballMax: 320, ballDefault: 190, wallSign: -1 }
+        };
+        // Granica ma gwarantować tylko zderzenie W OBRĘBIE płótna.
+        // Nie wymuszamy już, aby piłka po zderzeniu poleciała w prawo:
+        // |v_sciany| < |v_pilki| < 2|v_sciany| -> dalej w lewo, lecz wolniej;
+        // |v_pilki| = 2|v_sciany| -> zatrzymanie w układzie laboratorium;
+        // |v_pilki| > 2|v_sciany| -> ruch po zderzeniu w prawo.
+        const MIN_WALL_ONSCREEN_X = 85;
+        let karta = 'approaching';
+        let ukladOdniesienia = 'LABORATORIUM';
+        let stanSymulacji = 'IDLE'; // IDLE, RUNNING, USER_PAUSED, PAUSED (przed zderzeniem), DONE
+        let czyDoszloDoZderzenia = false;
+        let ostatniCzas = 0;
+        let predkoscPilkiPrzed = 0;
+        let predkoscScianyPrzed = 0;
+        let collisionInfo = '';
 
-        wallSpeedSlider.addEventListener('input', (e) => { wallSpeedValue.textContent = e.target.value; });
-        ballSpeedSlider.addEventListener('input', (e) => { ballSpeedValue.textContent = e.target.value; });
-        
-        startButton.addEventListener('click', startSymulacji);
-        resetButton.addEventListener('click', resetSymulacji);
-        switchFrameButton.addEventListener('click', zmienUklad);
+        const liczba = (n) => Number(n).toFixed(0);
+        // Przeliczamy bieżącą wartość wyłącznie do wybranego układu.
+        const formatPredkosci = (v) => `${v < 0 ? '−' : ''}${liczba(Math.abs(v))} px/s`;
+        function odczytPredkosci() {
+            const vLabPrzed = czyDoszloDoZderzenia ? predkoscPilkiPrzed : -Number(ui.ballSpeed.value);
+            const vLabPo = czyDoszloDoZderzenia ? pilka.predkosc : null;
+            const vSciany = ukladOdniesienia === 'SCIANA' ? sciana.predkosc : 0;
+            ui.velocityBefore.textContent = formatPredkosci(vLabPrzed - vSciany);
+            ui.velocityAfter.textContent = vLabPo === null ? '—' : formatPredkosci(vLabPo - vSciany);
+        }
+        function parametry() { return PARAMETRY[karta]; }
 
-        function startSymulacji() {
+        // Dolna granica piłki aktualizowana równocześnie ze zmianą prędkości ściany.
+        function minimumPilki(w) {
+            const p = parametry();
+            if (karta !== 'receding') return p.ballMin;
+            const gap = p.ballX - pilka.promien - (p.wallX + sciana.szerokosc);
+            const available = p.wallX - MIN_WALL_ONSCREEN_X;
+            // Zbliżanie wymaga v_pilki > w. Poniższy próg jest ostrzejszy:
+            // x_sciany(zderzenie) = x_start - w*gap/(v_pilki-w) >= MIN_WALL_ONSCREEN_X.
+            // Dodatkowy 1 px/s zapewnia widoczny zapas przy granicy i zaokrągleniach.
+            const byScreen = Math.ceil(w * (1 + gap / available)) + 1;
+            return Math.max(p.ballMin, byScreen);
+        }
+        function updateSliders() {
+            const p = parametry();
+            const w = Number(ui.wallSpeed.value);
+            const min = minimumPilki(w);
+            // Stała skala suwaka; automatyczne ograniczenie działa bez dodatkowych opisów.
+            ui.ballSpeed.min = '0';
+            if (Number(ui.ballSpeed.value) < min) ui.ballSpeed.value = String(min);
+            ui.wallSpeedValue.textContent = liczba(w);
+            ui.ballSpeedValue.textContent = ui.ballSpeed.value;
             if (stanSymulacji === 'IDLE') {
-                // POPRAWKA: Wczytujemy wartości z suwaków DOPIERO w momencie startu!
-                poczatkowaPredkoscSciany = parseFloat(wallSpeedSlider.value);
-                poczatkowaPredkoscPilki = -parseFloat(ballSpeedSlider.value);
-                
-                // Ustawiamy bieżące prędkości na podstawie wczytanych wartości
-                sciana.predkosc = poczatkowaPredkoscSciany;
-                pilka.predkosc = poczatkowaPredkoscPilki;
-                
-                stanSymulacji = 'RUNNING';
-                ostatniCzas = performance.now();
-                startButton.disabled = true;
-                resetButton.disabled = false;
-                switchFrameButton.disabled = true;
+                sciana.predkosc = p.wallSign * w;
+                pilka.predkosc = -Number(ui.ballSpeed.value);
+                rysujScene();
             }
+            odczytPredkosci();
         }
-
-        function resetSymulacji() {
-            stanSymulacji = 'IDLE';
-            
-            // POPRAWKA: Ta funkcja już nie wczytuje prędkości, tylko resetuje pozycje.
-            // Prędkości zostaną wczytane po kliknięciu START.
-            sciana.x = 100;
-            sciana.y = (canvas.height - sciana.wysokosc) / 2;
-            pilka.x = 700;
-            pilka.y = canvas.height / 2;
-            
-            // Resetujemy też bieżące prędkości, aby tekst na ekranie się zgadzał
-            sciana.predkosc = parseFloat(wallSpeedSlider.value);
-            pilka.predkosc = -parseFloat(ballSpeedSlider.value);
-
-            czyDoszloDoZderzenia = false;
-            
-            startButton.disabled = false;
-            resetButton.disabled = true;
-            switchFrameButton.disabled = false;
-            rysujScene();
-        }
-
-        function zmienUklad() {
-            ukladOdniesienia = (ukladOdniesienia === 'LABORATORIUM') ? 'SCIANA' : 'LABORATORIUM';
-            switchFrameButton.textContent = (ukladOdniesienia === 'LABORATORIUM') ? 'Zmień na: Układ Ściany' : 'Zmień na: Układ Laboratorium';
+        function setCard(next) {
+            if (!PARAMETRY[next]) return;
+            karta = next;
+            const p = parametry();
+            ui.approachTab.classList.toggle('active', karta === 'approaching');
+            ui.recedeTab.classList.toggle('active', karta === 'receding');
+            ui.approachTab.setAttribute('aria-selected', String(karta === 'approaching'));
+            ui.recedeTab.setAttribute('aria-selected', String(karta === 'receding'));
+            ui.wallSpeed.min = String(p.wallMin);
+            ui.wallSpeed.max = String(p.wallMax);
+            ui.wallSpeed.value = String(p.wallDefault);
+            ui.ballSpeed.max = String(p.ballMax);
+            ui.ballSpeed.value = String(p.ballDefault);
+            ui.wallDirection.textContent = karta === 'approaching' ? '(w prawo)' : '(w lewo)';
             resetSymulacji();
         }
-
+        function resetSymulacji() {
+            ui.collisionOverlay.hidden = true;
+            stanSymulacji = 'IDLE';
+            czyDoszloDoZderzenia = false;
+            collisionInfo = '';
+            const p = parametry();
+            sciana.x = p.wallX;
+            sciana.y = (canvas.height - sciana.wysokosc) / 2;
+            pilka.x = p.ballX;
+            pilka.y = canvas.height / 2;
+            ui.startButton.disabled = false;
+            ui.startButton.textContent = 'START';
+            ui.resetButton.disabled = true;
+            ui.switchFrameButton.disabled = false;
+            ui.wallSpeed.disabled = false;
+            ui.ballSpeed.disabled = false;
+            ui.approachTab.disabled = false;
+            ui.recedeTab.disabled = false;
+            ui.simulationStatus.textContent = karta === 'approaching' ?
+                'Karta I: ściana zbliża się do piłki.' :
+                'Karta II: piłka dogania ścianę oddalającą się w lewo.';
+            updateSliders();
+        }
+        function startSymulacji() {
+            // Ten sam przycisk służy do uruchomienia, zatrzymania i wznowienia ruchu.
+            // Osobna pauza dydaktyczna przed odbiciem zachowuje swoje okienko.
+            if (stanSymulacji === 'RUNNING') {
+                stanSymulacji = 'USER_PAUSED';
+                ui.startButton.textContent = 'WZNÓW';
+                ui.simulationStatus.textContent = 'Animacja zatrzymana.';
+                return;
+            }
+            if (stanSymulacji === 'USER_PAUSED') {
+                stanSymulacji = 'RUNNING';
+                ostatniCzas = performance.now(); // bez skoku pozycji po przerwie
+                ui.startButton.textContent = 'PAUZA';
+                ui.simulationStatus.textContent = czyDoszloDoZderzenia ? collisionInfo : 'Animacja wznowiona.';
+                return;
+            }
+            if (stanSymulacji !== 'IDLE') return;
+            const p = parametry();
+            predkoscScianyPrzed = p.wallSign * Number(ui.wallSpeed.value);
+            predkoscPilkiPrzed = -Number(ui.ballSpeed.value);
+            sciana.predkosc = predkoscScianyPrzed;
+            pilka.predkosc = predkoscPilkiPrzed;
+            stanSymulacji = 'RUNNING';
+            ostatniCzas = performance.now();
+            ui.startButton.disabled = false;
+            ui.startButton.textContent = 'PAUZA';
+            ui.resetButton.disabled = false;
+            // Zmiana układu odniesienia zmienia tylko widok, nie fizykę; można ją
+            // wykonywać także podczas ruchu i po zderzeniu.
+            ui.switchFrameButton.disabled = false;
+            ui.wallSpeed.disabled = true;
+            ui.ballSpeed.disabled = true;
+            ui.approachTab.disabled = true;
+            ui.recedeTab.disabled = true;
+            ui.simulationStatus.textContent = 'Obserwuj zbliżanie się piłki i ściany…';
+        }
+        function zmienUklad() {
+            ukladOdniesienia = ukladOdniesienia === 'LABORATORIUM' ? 'SCIANA' : 'LABORATORIUM';
+            ui.switchFrameButton.textContent = ukladOdniesienia === 'LABORATORIUM' ?
+                'Zmień na: Układ Ściany' : 'Zmień na: Układ Laboratorium';
+            rysujScene();
+            odczytPredkosci();
+        }
+        function pokazPauze() {
+            stanSymulacji = 'PAUSED';
+            ui.startButton.disabled = true; // czekamy na przycisk w oknie zderzenia
+            ui.dontShowAgain.checked = false;
+            ui.collisionPrompt.textContent = karta === 'approaching' ?
+                'Ściana zbliża się do piłki. Czy po odbiciu piłka będzie szybsza?' :
+                'Piłka dogoniła oddalającą się ścianę. Czy po odbiciu będzie poruszała się wolniej?';
+            ui.collisionOverlay.hidden = false;
+            ui.simulationStatus.textContent = 'Pauza tuż przed odbiciem.';
+            rysujScene();
+            ui.continueButton.focus();
+        }
+        function wykonajOdbicie() {
+            // Sprężyste odbicie od ściany o bardzo dużej masie: v_po = 2*v_sciany - v_przed.
+            pilka.predkosc = 2 * sciana.predkosc - predkoscPilkiPrzed;
+            czyDoszloDoZderzenia = true;
+            collisionInfo = 'Odbicie nastąpiło.';
+            ui.simulationStatus.textContent = collisionInfo;
+            odczytPredkosci();
+        }
+        function kontynuujPoPauzie() {
+            if (stanSymulacji !== 'PAUSED') return;
+            if (ui.dontShowAgain.checked) ui.pauseBeforeCollision.checked = false;
+            ui.collisionOverlay.hidden = true;
+            wykonajOdbicie();
+            stanSymulacji = 'RUNNING';
+            ui.startButton.disabled = false;
+            ui.startButton.textContent = 'PAUZA';
+            ostatniCzas = performance.now();
+        }
         function rysujScene() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            let tekstDoWyswietlenia = '';
-            
-            if (ukladOdniesienia === 'LABORATORIUM') {
-                ctx.fillStyle = '#dc3232';
-                ctx.fillRect(sciana.x, sciana.y, sciana.szerokosc, sciana.wysokosc);
-                ctx.fillStyle = '#3232dc';
-                ctx.beginPath();
-                ctx.arc(pilka.x, pilka.y, pilka.promien, 0, Math.PI * 2);
-                ctx.fill();
-                tekstDoWyswietlenia = `Prędkość piłki: ${Math.round(pilka.predkosc)} px/s`;
-            } else { 
-                ctx.fillStyle = '#dc3232';
-                ctx.fillRect(WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE, sciana.y, sciana.szerokosc, sciana.wysokosc);
-                const wizualnaPozycjaPilkiX = WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE + (pilka.x - sciana.x);
-                ctx.fillStyle = '#3232dc';
-                ctx.beginPath();
-                ctx.arc(wizualnaPozycjaPilkiX, pilka.y, pilka.promien, 0, Math.PI * 2);
-                ctx.fill();
-                const predkoscWzgledna = pilka.predkosc - sciana.predkosc;
-                tekstDoWyswietlenia = `Prędkość piłki WZGLĘDEM ściany: ${Math.round(predkoscWzgledna)} px/s`;
-            }
-
+            const xSciany = ukladOdniesienia === 'LABORATORIUM' ?
+                sciana.x : WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE;
+            const xPilki = ukladOdniesienia === 'LABORATORIUM' ?
+                pilka.x : WIZUALNA_POZYCJA_SCIANY_W_JEJ_UKLADZIE + (pilka.x - sciana.x);
+            ctx.fillStyle = '#dc3232';
+            ctx.fillRect(xSciany, sciana.y, sciana.szerokosc, sciana.wysokosc);
+            ctx.fillStyle = '#3232dc';
+            ctx.beginPath();
+            ctx.arc(xPilki, pilka.y, pilka.promien, 0, Math.PI * 2);
+            ctx.fill();
+            const v = ukladOdniesienia === 'LABORATORIUM' ?
+                pilka.predkosc : pilka.predkosc - sciana.predkosc;
             ctx.fillStyle = 'black';
             ctx.font = '20px Arial';
-            ctx.fillText(`UKŁAD: ${ukladOdniesienia}`, 10, 30);
-            ctx.fillText(tekstDoWyswietlenia, 10, 60);
+            const nazwaUkladu = ukladOdniesienia === 'LABORATORIUM' ? 'LABORATORIUM (PODŁOGA)' : 'ŚCIANY';
+            ctx.fillText(`UKŁAD: ${nazwaUkladu}`, 10, 30);
+            ctx.fillText(`Prędkość piłki: ${formatPredkosci(v)}`, 10, 60);
         }
-        
         function petlaAnimacji(aktualnyCzas) {
             if (stanSymulacji === 'RUNNING') {
                 let dt = (aktualnyCzas - ostatniCzas) / 1000 || 0;
                 ostatniCzas = aktualnyCzas;
-
-                if (dt > 0.1) {
-                    dt = 1 / 60; 
-                }
-                
-                let wspolczynnikCzasu = slowMoCheckbox.checked ? 0.5 : 1.0;
-                const efektywny_dt = dt * wspolczynnikCzasu;
-                
-                sciana.x += sciana.predkosc * efektywny_dt;
-                pilka.x += pilka.predkosc * efektywny_dt;
-
-                if (pilka.x - pilka.promien <= sciana.x + sciana.szerokosc && !czyDoszloDoZderzenia) {
-                    czyDoszloDoZderzenia = true;
-                    const wnikniecie = (sciana.x + sciana.szerokosc) - (pilka.x - pilka.promien);
-                    pilka.x += wnikniecie;
-
-                    let shouldBounce = false;
-
-                    if (window.innerWidth > 850) {
-                        if (confirm("Piłka zaraz się odbije, kontynuować?")) {
-                            shouldBounce = true;
+                if (dt > 0.1) dt = 1 / 60;
+                const effective = dt * (ui.slowMoCheckbox.checked ? .5 : 1);
+                if (!czyDoszloDoZderzenia) {
+                    const gap = pilka.x - pilka.promien - sciana.x - sciana.szerokosc;
+                    const closing = sciana.predkosc - pilka.predkosc;
+                    if (closing > 0 && gap <= closing * effective) {
+                        const hitTime = Math.max(0, gap / closing);
+                        sciana.x += sciana.predkosc * hitTime;
+                        pilka.x = sciana.x + sciana.szerokosc + pilka.promien;
+                        if (ui.pauseBeforeCollision.checked) {
+                            pokazPauze();
+                        } else {
+                            wykonajOdbicie();
+                            const rem = Math.max(0, effective - hitTime);
+                            sciana.x += sciana.predkosc * rem;
+                            pilka.x += pilka.predkosc * rem;
                         }
                     } else {
-                        shouldBounce = true;
+                        sciana.x += sciana.predkosc * effective;
+                        pilka.x += pilka.predkosc * effective;
                     }
-
-                    if (shouldBounce) {
-                        if (ukladOdniesienia === 'LABORATORIUM') {
-                            pilka.predkosc = -poczatkowaPredkoscPilki + 2 * poczatkowaPredkoscSciany;
-                        } else {
-                            const predkoscWzglednaPrzed = poczatkowaPredkoscPilki - poczatkowaPredkoscSciany;
-                            const predkoscWzglednaPo = -predkoscWzglednaPrzed;
-                            pilka.predkosc = predkoscWzglednaPo + poczatkowaPredkoscSciany;
-                        }
-                    }
+                } else {
+                    sciana.x += sciana.predkosc * effective;
+                    pilka.x += pilka.predkosc * effective;
+                }
+                if (czyDoszloDoZderzenia && pilka.x >= canvas.width - pilka.promien) {
+                    pilka.x = canvas.width - pilka.promien;
+                    stanSymulacji = 'DONE';
+                    ui.startButton.textContent = 'START';
+                    ui.startButton.disabled = true;
+                    ui.simulationStatus.textContent = collisionInfo + ' Naciśnij RESETUJ, aby powtórzyć.';
                 }
             }
-            
             rysujScene();
             requestAnimationFrame(petlaAnimacji);
         }
-
-        resetSymulacji();
+        ui.wallSpeed.addEventListener('input', updateSliders);
+        ui.ballSpeed.addEventListener('input', updateSliders);
+        ui.startButton.addEventListener('click', startSymulacji);
+        ui.resetButton.addEventListener('click', resetSymulacji);
+        ui.switchFrameButton.addEventListener('click', zmienUklad);
+        ui.approachTab.addEventListener('click', () => setCard('approaching'));
+        ui.recedeTab.addEventListener('click', () => setCard('receding'));
+        ui.continueButton.addEventListener('click', kontynuujPoPauzie);
+        setCard('approaching');
         requestAnimationFrame(petlaAnimacji);
     </script>
 </body>
